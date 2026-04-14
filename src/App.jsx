@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 
 
 /* ── Bold key_drivers phrases inside a text string ── */
@@ -86,28 +86,6 @@ function SignalItem({ signal, title, detail }) {
   );
 }
 
-/* ── Delta item (quarter-over-quarter changes) ── */
-function DeltaItem({ type, title, detail }) {
-  const map = {
-    new:           { icon: "+", bg: "#2dd4a014", color: "#2dd4a0", label: "New This Quarter" },
-    tone_shift:    { icon: "Δ", bg: "#efbf6b14", color: "#efbf6b", label: "Tone Shift" },
-    metric_change: { icon: "Δ", bg: "#efbf6b14", color: "#efbf6b", label: "Metric Change" },
-    dropped:       { icon: "−", bg: "#ef6b6b14", color: "#ef6b6b", label: "Dropped Topic" },
-    unchanged:     { icon: "═", bg: "#6ba3ef14", color: "#6ba3ef", label: "Unchanged" },
-  };
-  const m = map[type] || map.unchanged;
-  return (
-    <div style={{ background: "var(--card)", border: "1px solid var(--line-dim)", borderRadius: 6, padding: 18, transition: "border-color 0.25s" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11, width: 22, height: 22, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: m.bg, color: m.color }}>{m.icon}</div>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9, textTransform: "uppercase", letterSpacing: "1.2px", color: "var(--muted)" }}>{m.label}</span>
-      </div>
-      <div style={{ fontFamily: "var(--body)", fontSize: 13, fontWeight: 600, color: "var(--fg)", marginBottom: 6 }}>{title}</div>
-      <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.7, fontFamily: "var(--body)" }}>{detail}</div>
-    </div>
-  );
-}
-
 function fmtRevenue(val) {
   if (val == null) return "";
   const s = String(val).trim();
@@ -123,6 +101,30 @@ function fmtRevenue(val) {
 
 /* ── Competitive landscape table ── */
 function CompetitiveTable({ companies, offerings }) {
+  const { rowOrder, colOrder } = useMemo(() => {
+    // Keep the primary company (col 0) pinned. Match each peer to a row where
+    // it has data so that peer column i lines up with row i-1 (diagonal of the
+    // peer block). Remaining rows / unmatched peers spill to the end.
+    const peerCols = companies.map((_, i) => i).slice(1);
+    const rowsLeft = new Set(offerings.map((_, i) => i));
+    const rowForPeer = new Map();
+
+    for (const c of peerCols) {
+      let match = null;
+      for (const r of rowsLeft) {
+        if (offerings[r].positions[c]?.has_segment) { match = r; break; }
+      }
+      if (match != null) { rowForPeer.set(c, match); rowsLeft.delete(match); }
+    }
+
+    const matchedPeers = peerCols.filter(c => rowForPeer.has(c));
+    const unmatchedPeers = peerCols.filter(c => !rowForPeer.has(c));
+    const colOrder = [0, ...matchedPeers, ...unmatchedPeers];
+    const rowOrder = matchedPeers.map(c => rowForPeer.get(c));
+    rowOrder.push(...rowsLeft);
+    return { rowOrder, colOrder };
+  }, [companies, offerings]);
+
   const gridCols = `140px repeat(${companies.length}, 1fr)`;
   const cellBase = { padding: "10px 14px", borderBottom: "1px solid var(--line-dim)" };
 
@@ -131,21 +133,24 @@ function CompetitiveTable({ companies, offerings }) {
       {/* Header */}
       <div style={{ display: "grid", gridTemplateColumns: gridCols }}>
         <div style={{ ...cellBase, borderBottom: "2px solid var(--line)" }} />
-        {companies.map((co, i) => (
-          <div key={i} style={{ ...cellBase, borderBottom: "2px solid var(--line)", fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600, color: i === 0 ? "var(--green)" : "var(--fg)", letterSpacing: "1.5px" }}>{co}</div>
+        {colOrder.map((ci, i) => (
+          <div key={i} style={{ ...cellBase, borderBottom: "2px solid var(--line)", fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600, color: ci === 0 ? "var(--green)" : "var(--fg)", letterSpacing: "1.5px" }}>{companies[ci]}</div>
         ))}
       </div>
 
       {/* Rows */}
-      {offerings.map((row, ri) => (
-        <div key={ri} style={{ display: "grid", gridTemplateColumns: gridCols, background: ri % 2 === 0 ? "transparent" : "var(--card)" }}>
+      {rowOrder.map((ri, displayRi) => {
+        const row = offerings[ri];
+        return (
+        <div key={displayRi} style={{ display: "grid", gridTemplateColumns: gridCols, background: displayRi % 2 === 0 ? "transparent" : "var(--card)" }}>
           {/* Category */}
           <div style={{ ...cellBase, fontFamily: "var(--mono)", fontSize: 9, textTransform: "uppercase", letterSpacing: "1.2px", color: "var(--muted)", display: "flex", alignItems: "center" }}>{row.category}</div>
 
           {/* Cells */}
-          {row.positions.map((pos, ci) => {
-            if (!pos.has_segment) return (
-              <div key={ci} style={{ ...cellBase, display: "flex", alignItems: "center" }}>
+          {colOrder.map((ci, displayCi) => {
+            const pos = row.positions[ci];
+            if (!pos?.has_segment) return (
+              <div key={displayCi} style={{ ...cellBase, display: "flex", alignItems: "center" }}>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ghost)", letterSpacing: "0.5px" }}>No Data</span>
               </div>
             );
@@ -153,7 +158,7 @@ function CompetitiveTable({ companies, offerings }) {
             const growthLabel = isNaN(growthNum) ? String(pos.yoy_growth ?? "") : `${growthNum >= 0 ? "+" : ""}${growthNum.toFixed(1)}%`;
             const growthColor = growthNum > 0 ? "var(--green)" : growthNum < 0 ? "var(--red)" : "var(--muted)";
             return (
-              <div key={ci} style={{ ...cellBase, borderLeft: ci === 0 ? "2px solid var(--green)" : undefined }}>
+              <div key={displayCi} style={{ ...cellBase, borderLeft: ci === 0 ? "2px solid var(--green)" : undefined }}>
                 <div style={{ fontFamily: "var(--body)", fontSize: 12, color: "var(--fg)", marginBottom: 4 }}>{pos.segment_name}</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                   <span style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 600, color: "var(--fg)" }}>{fmtRevenue(pos.revenue)}</span>
@@ -164,7 +169,8 @@ function CompetitiveTable({ companies, offerings }) {
             );
           })}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -209,7 +215,7 @@ export default function Dashboard() {
   const run = async () => {
     if (!ticker.trim()) return;
     setLoading(true); setError(null); setData(null);
-    const phases = ["Scanning earnings transcripts...", "Pulling stock fundamentals...", "Analyzing peer transcripts...", "Assessing management sentiment...", "Building delta analysis...", "Compiling research report..."];
+    const phases = ["Scanning earnings transcripts...", "Pulling stock fundamentals...", "Analyzing peer transcripts...", "Assessing management sentiment...", "Compiling research report..."];
     let i = 0; setPhase(phases[0]);
     const iv = setInterval(() => { i++; if (i < phases.length) setPhase(phases[i]); }, 3500);
     try {
@@ -429,21 +435,7 @@ const ex = data?.executive_summary;
               </Section>
             )}
 
-            {/* ══ 3. Delta vs Last Quarter ══ */}
-            {data.delta_vs_last_quarter?.changes?.length > 0 && (
-              <Section
-                title="Delta vs. Last Quarter"
-                badge={data.delta_vs_last_quarter.comparison}
-                badgeColor="#efbf6b"
-                delay={0.15}
-              >
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  {data.delta_vs_last_quarter.changes.map((item, i) => <DeltaItem key={i} {...item} />)}
-                </div>
-              </Section>
-            )}
-
-            {/* ══ 4. Industry & Thematic Trends ══ */}
+{/* ══ 4. Industry & Thematic Trends ══ */}
             {data.industry_trends?.themes?.length > 0 && (
               <Section
                 title="Industry & Thematic Trends"

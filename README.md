@@ -12,8 +12,8 @@ An AI-powered equity research dashboard built for the UMD Agentic AI Challenge 2
 |---|---|
 | Executive Summary | Key metrics, headline takeaway with bolded drivers, and forward guidance |
 | Key Insights | Bullish / bearish / neutral signals extracted from the transcript |
-| Delta vs. Last Quarter | What changed, what was dropped, and tone shifts vs. the prior call |
 | Industry & Thematic Trends | Cross-transcript themes sourced from peer earnings calls |
+| Competitive Landscape | Segment-level revenue vs. peers, auto-ordered so data-bearing cells land on the diagonal |
 
 ## Architecture
 
@@ -22,7 +22,7 @@ The frontend sends a POST request to an **n8n webhook** with the ticker and a se
 1. Fetches and parses the most recent earnings call transcript
 2. Pulls stock fundamentals and peer transcripts
 3. Runs Claude to assess management sentiment and extract signals
-4. Builds the quarter-over-quarter delta analysis
+4. Builds the competitive landscape from peer segment data
 5. Returns structured JSON consumed directly by the UI
 
 The frontend never does any AI inference — it's a pure render layer over the agent output.
@@ -45,13 +45,22 @@ The webhook returns:
       "forward_guidance": "..."
     },
     "key_insights": [{ "signal": "bullish|bearish|neutral", "title": "...", "detail": "..." }],
-    "delta_vs_last_quarter": {
-      "comparison": "Q4 2025 vs Q3 2025",
-      "changes": [{ "type": "new|tone_shift|metric_change|dropped|unchanged", "title": "...", "detail": "..." }]
-    },
     "industry_trends": {
       "themes": [{ "category": "dominant|emerging|persistent", "title": "...", "detail": "...", "mentioned_by": ["AMZN"] }],
       "sources": ["AMZN Q4'25"]
+    },
+    "competitive_landscape": {
+      "companies": ["AMZN", "WMT", "GOOG", "META"],
+      "offerings": [{
+        "category": "E-commerce / Online Retail",
+        "positions": [{
+          "has_segment": true,
+          "segment_name": "Online stores",
+          "revenue": 269300000000,
+          "revenue_prior_year": 247000000000,
+          "yoy_growth": 9.0
+        }]
+      }]
     }
   }
 }]
