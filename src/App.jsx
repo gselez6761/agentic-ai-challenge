@@ -38,16 +38,17 @@ function Section({ title, badge, badgeColor = "#6ba3ef", children, delay = 0 }) 
 
 /* ── Metric card (executive summary grid) ── */
 function MetricCard({ label, value, yoy_change }) {
-  const isPos = yoy_change?.startsWith("+");
-  const isNeg = yoy_change?.startsWith("-");
+  const changeNum = typeof yoy_change === "number" ? yoy_change : parseFloat(yoy_change);
+  const isPos = changeNum > 0;
+  const isNeg = changeNum < 0;
   const col = isPos ? "var(--green)" : isNeg ? "var(--red)" : "var(--muted)";
   const arrow = isPos ? "▲" : isNeg ? "▼" : "";
-  const display = yoy_change?.replace(/^[+-]/, "") ?? "";
+  const display = isNaN(changeNum) ? String(yoy_change ?? "") : `${Math.abs(changeNum).toFixed(1)}%`;
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--line-dim)", borderRadius: 6, padding: 16, transition: "border-color 0.25s" }}>
       <div style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 8 }}>{label}</div>
       <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 600, color: "var(--fg)", lineHeight: 1.1 }}>{value}</div>
-      {yoy_change && (
+      {yoy_change != null && (
         <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: col, marginTop: 6 }}>
           {arrow} {display} YoY
         </div>
@@ -103,6 +104,67 @@ function DeltaItem({ type, title, detail }) {
       </div>
       <div style={{ fontFamily: "var(--body)", fontSize: 13, fontWeight: 600, color: "var(--fg)", marginBottom: 6 }}>{title}</div>
       <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.7, fontFamily: "var(--body)" }}>{detail}</div>
+    </div>
+  );
+}
+
+function fmtRevenue(val) {
+  if (val == null) return "";
+  const s = String(val).trim();
+  // Already formatted (has $, B, M, etc.) — pass through
+  if (/[A-Za-z$]/.test(s)) return s;
+  const n = Number(s.replace(/,/g, ""));
+  if (isNaN(n)) return s;
+  if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (Math.abs(n) >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+  return `$${n}`;
+}
+
+/* ── Competitive landscape table ── */
+function CompetitiveTable({ companies, offerings }) {
+  const gridCols = `140px repeat(${companies.length}, 1fr)`;
+  const cellBase = { padding: "10px 14px", borderBottom: "1px solid var(--line-dim)" };
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      {/* Header */}
+      <div style={{ display: "grid", gridTemplateColumns: gridCols }}>
+        <div style={{ ...cellBase, borderBottom: "2px solid var(--line)" }} />
+        {companies.map((co, i) => (
+          <div key={i} style={{ ...cellBase, borderBottom: "2px solid var(--line)", fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600, color: i === 0 ? "var(--green)" : "var(--fg)", letterSpacing: "1.5px" }}>{co}</div>
+        ))}
+      </div>
+
+      {/* Rows */}
+      {offerings.map((row, ri) => (
+        <div key={ri} style={{ display: "grid", gridTemplateColumns: gridCols, background: ri % 2 === 0 ? "transparent" : "var(--card)" }}>
+          {/* Category */}
+          <div style={{ ...cellBase, fontFamily: "var(--mono)", fontSize: 9, textTransform: "uppercase", letterSpacing: "1.2px", color: "var(--muted)", display: "flex", alignItems: "center" }}>{row.category}</div>
+
+          {/* Cells */}
+          {row.positions.map((pos, ci) => {
+            if (!pos.has_segment) return (
+              <div key={ci} style={{ ...cellBase, display: "flex", alignItems: "center" }}>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ghost)", letterSpacing: "0.5px" }}>No Data</span>
+              </div>
+            );
+            const growthNum = typeof pos.yoy_growth === "number" ? pos.yoy_growth : parseFloat(pos.yoy_growth);
+            const growthLabel = isNaN(growthNum) ? String(pos.yoy_growth ?? "") : `${growthNum >= 0 ? "+" : ""}${growthNum.toFixed(1)}%`;
+            const growthColor = growthNum > 0 ? "var(--green)" : growthNum < 0 ? "var(--red)" : "var(--muted)";
+            return (
+              <div key={ci} style={{ ...cellBase, borderLeft: ci === 0 ? "2px solid var(--green)" : undefined }}>
+                <div style={{ fontFamily: "var(--body)", fontSize: 12, color: "var(--fg)", marginBottom: 4 }}>{pos.segment_name}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 600, color: "var(--fg)" }}>{fmtRevenue(pos.revenue)}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: growthColor }}>{growthLabel}</span>
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ghost)", marginTop: 2 }}>{fmtRevenue(pos.revenue_prior_year)} prior yr</div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -402,6 +464,21 @@ const ex = data?.executive_summary;
                     ))}
                   </div>
                 )}
+              </Section>
+            )}
+
+            {/* ══ 5. Competitive Landscape ══ */}
+            {data.competitive_landscape?.companies?.length > 0 && data.competitive_landscape?.offerings?.length > 0 && (
+              <Section
+                title="Competitive Landscape"
+                badge={`${data.competitive_landscape.companies.length} Companies · ${data.competitive_landscape.offerings.length} Segments`}
+                badgeColor="#efbf6b"
+                delay={0.25}
+              >
+                <CompetitiveTable
+                  companies={data.competitive_landscape.companies}
+                  offerings={data.competitive_landscape.offerings}
+                />
               </Section>
             )}
 
