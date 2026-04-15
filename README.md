@@ -73,7 +73,6 @@ The webhook returns:
 - **Frontend:** React + Vite
 - **Orchestration:** n8n (self-hosted)
 - **AI:** Claude (Anthropic) via n8n agents
-- **Fonts:** Playfair Display · IBM Plex Mono · DM Sans
 
 ## Running locally
 
